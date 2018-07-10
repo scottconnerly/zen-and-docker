@@ -1,0 +1,47 @@
+version: 0.2
+
+environment_variables:
+  plaintext:
+    AWS_ACCOUNT_ID: "############"
+
+phases:
+  install:
+    commands:
+      - echo Install phase started on `date`
+      - apt-get -y update
+  pre_build:
+    commands:
+      - echo Logging in to Amazon ECR...
+      - $(aws ecr get-login --no-include-email --region us-east-1)
+
+      - GIT_HASH_SHORT=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-9)
+      - GIT_TAG="git-${GIT_HASH_SHORT}"
+#$CODEBUILD_INITIATOR is codepipeline/{maybe-git-repo-name}-{branchname}
+      - for i in $(echo $CODEBUILD_INITIATOR | tr "-" "\n"); do BRANCH_NAME=$i; done
+      - BRANCH_TAG=$(echo $BRANCH_NAME | sed 's/master/latest/g')
+      - echo Building git commit $CODEBUILD_RESOLVED_SOURCE_VERSION from branch $BRANCHNAME
+
+      - IMAGE_URL=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$IMAGE_REPO_NAME
+      - GIT_TAGGED_URL=$IMAGE_URL:$GIT_TAG
+      - BRANCH_TAGGED_URL=$IMAGE_URL:$BRANCH_TAG
+
+  build:
+    commands:
+      - echo build phase started on `date`
+      - docker build --build-arg GIT_HASH_ARG=$GIT_HASH_SHORT --build-arg INGRESS_SOLUTION=$INGRESS_SOLUTION -t $GIT_TAGGED_URL -t $BRANCH_TAGGED_URL .
+
+  post_build:
+    commands:
+      - echo post_build phase started on `date`
+      - echo Pushing the Docker images...
+      - docker push $GIT_TAGGED_URL
+      - docker push $BRANCH_TAGGED_URL
+      - printf '[{"name":"%s","imageUri":"%s"}]' $IMAGE_REPO_NAME $GIT_TAGGED_URL > imagedefinitions.json
+      - echo Build completed on `date`
+
+artifacts:
+  files:
+    - imagedefinitions.json
+  discard-paths: yes
+
+#https://docs.aws.amazon.com/codebuild/latest/userguide/build-env-ref-env-vars.html

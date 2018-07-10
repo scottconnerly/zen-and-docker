@@ -1,0 +1,65 @@
+version: '3'
+services:
+  webhost:
+    depends_on:
+      - mysqlhost
+      - redishost
+    image: "myapache:latest"
+    volumes:
+      - ~/.aws:/root/.aws
+      - ~/project:/var/www/html/
+    networks:
+        - pretend_vpc
+    ports:
+      - "8888:80"
+    restart: always
+    environment:
+      - APP_ENV=local
+
+  mysqlhost:
+    image: "mysql:5.7"
+    volumes:
+      - coredb_data:/var/lib/mysql
+      - ~/project/db/snapshot:/docker-entrypoint-initdb.d/
+    networks:
+      - pretend_vpc
+    ports:
+      - "3000:3306"
+    restart: always
+    environment:
+      - MYSQL_ROOT_PASSWORD=yoursupersecurepasswordhere
+      - MYSQL_DATABASE=your_db
+      - MYSQL_USER=your_user
+      - MYSQL_PASSWORD=yoursecurepasswordhere
+    command: mysqld --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+
+  redishost:
+    image: 'bitnami/redis:3'
+    volumes:
+      - redis_data:/var/lib/redis
+    networks:
+      - pretend_vpc
+    ports:
+      - "6000:6379"
+    restart: always
+    environment:
+      - ALLOW_EMPTY_PASSWORD=yes
+      - REDIS_PASSWORD=
+
+  logentrieshost:
+    image: 'logentries/docker-logentries'
+    volumes:
+     - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - pretend_vpc
+    command: "--secure --no-stats -j --matchByName '.*webhost.*'"
+
+volumes:
+  coredb_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  pretend_vpc:
+    driver: bridge
